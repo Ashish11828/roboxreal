@@ -33,7 +33,9 @@ import androidx.compose.material.icons.filled.BugReport
 import androidx.compose.material.icons.filled.CloudDone
 import androidx.compose.material.icons.filled.CloudOff
 import androidx.compose.material.icons.filled.Code
+import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Shield
+import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material.icons.filled.Timer
 import androidx.compose.material.icons.filled.TouchApp
 import androidx.compose.material.icons.filled.VerifiedUser
@@ -192,9 +194,13 @@ fun RoboXrWorkspaceScreen(
                     if (isExpandedXrLayout) {
                         XrealBottomActionBar(
                             state = state,
-                            onOneShotRecovery = {
+                            onRunLiveDemo = {
                                 xrealBridge.pulseHaptic(false)
-                                viewModel.triggerOneShot30sRecovery()
+                                if (state.demoState.running) {
+                                    viewModel.stopXrealGuidedDemo()
+                                } else {
+                                    viewModel.startXrealGuidedDemo()
+                                }
                             },
                             onApproveDeploy = viewModel::openHitlGateDialog,
                             onFaultInject = { viewModel.setFaultSheetVisible(true) },
@@ -209,9 +215,14 @@ fun RoboXrWorkspaceScreen(
                         ) {
                             XrealBottomActionBar(
                                 state = state,
-                                onOneShotRecovery = {
+                                onRunLiveDemo = {
                                     xrealBridge.pulseHaptic(false)
-                                    viewModel.triggerOneShot30sRecovery()
+                                    compactSelectedTab = 0
+                                    if (state.demoState.running) {
+                                        viewModel.stopXrealGuidedDemo()
+                                    } else {
+                                        viewModel.startXrealGuidedDemo()
+                                    }
                                 },
                                 onApproveDeploy = viewModel::openHitlGateDialog,
                                 onFaultInject = { viewModel.setFaultSheetVisible(true) }
@@ -321,6 +332,8 @@ fun RoboXrWorkspaceScreen(
                                 pinchTargetMode = state.pinchTargetMode,
                                 visorInteractionMode = state.visorInteractionMode,
                                 electrochromicLevel = state.electrochromicLevel,
+                                glassesFrameEnabled = state.xrealGlassesFrameEnabled,
+                                demoState = state.demoState,
                                 isPlaying = state.twinPlaying,
                                 manualStageIndex = state.manualStageIndex,
                                 onTogglePlay = viewModel::toggleTwinPlayback,
@@ -328,7 +341,10 @@ fun RoboXrWorkspaceScreen(
                                 onSetInteractionMode = viewModel::setVisorInteractionMode,
                                 onSelectPinchTarget = viewModel::setPinchTargetMode,
                                 onCycleElectrochromic = viewModel::cycleElectrochromicLevel,
+                                onToggleGlassesFrame = viewModel::toggleXrealGlassesFrame,
+                                onStopDemo = viewModel::stopXrealGuidedDemo,
                                 onMoveActiveAnchor = { pt ->
+                                    if (state.demoState.running) viewModel.stopXrealGuidedDemo()
                                     viewModel.pinchSetFromSpatialCursor(pt)
                                 },
                                 onStepActiveAnchorZ = { newZ ->
@@ -402,6 +418,8 @@ fun RoboXrWorkspaceScreen(
                                         pinchTargetMode = state.pinchTargetMode,
                                         visorInteractionMode = state.visorInteractionMode,
                                         electrochromicLevel = state.electrochromicLevel,
+                                        glassesFrameEnabled = state.xrealGlassesFrameEnabled,
+                                        demoState = state.demoState,
                                         isPlaying = state.twinPlaying,
                                         manualStageIndex = state.manualStageIndex,
                                         onTogglePlay = viewModel::toggleTwinPlayback,
@@ -409,7 +427,10 @@ fun RoboXrWorkspaceScreen(
                                         onSetInteractionMode = viewModel::setVisorInteractionMode,
                                         onSelectPinchTarget = viewModel::setPinchTargetMode,
                                         onCycleElectrochromic = viewModel::cycleElectrochromicLevel,
+                                        onToggleGlassesFrame = viewModel::toggleXrealGlassesFrame,
+                                        onStopDemo = viewModel::stopXrealGuidedDemo,
                                         onMoveActiveAnchor = { pt ->
+                                            if (state.demoState.running) viewModel.stopXrealGuidedDemo()
                                             viewModel.pinchSetFromSpatialCursor(pt)
                                         },
                                         onStepActiveAnchorZ = { newZ ->
@@ -418,7 +439,7 @@ fun RoboXrWorkspaceScreen(
                                         },
                                         modifier = Modifier
                                             .fillMaxWidth()
-                                            .height(370.dp)
+                                            .height(410.dp)
                                     )
                                     SafetyChecklistPanel(state = state)
                                 }
@@ -433,6 +454,8 @@ fun RoboXrWorkspaceScreen(
                                         pinchTargetMode = state.pinchTargetMode,
                                         visorInteractionMode = state.visorInteractionMode,
                                         electrochromicLevel = state.electrochromicLevel,
+                                        glassesFrameEnabled = state.xrealGlassesFrameEnabled,
+                                        demoState = state.demoState,
                                         isPlaying = state.twinPlaying,
                                         manualStageIndex = state.manualStageIndex,
                                         onTogglePlay = viewModel::toggleTwinPlayback,
@@ -440,7 +463,10 @@ fun RoboXrWorkspaceScreen(
                                         onSetInteractionMode = viewModel::setVisorInteractionMode,
                                         onSelectPinchTarget = viewModel::setPinchTargetMode,
                                         onCycleElectrochromic = viewModel::cycleElectrochromicLevel,
+                                        onToggleGlassesFrame = viewModel::toggleXrealGlassesFrame,
+                                        onStopDemo = viewModel::stopXrealGuidedDemo,
                                         onMoveActiveAnchor = { pt ->
+                                            if (state.demoState.running) viewModel.stopXrealGuidedDemo()
                                             viewModel.pinchSetFromSpatialCursor(pt)
                                         },
                                         onStepActiveAnchorZ = { newZ ->
@@ -449,7 +475,7 @@ fun RoboXrWorkspaceScreen(
                                         },
                                         modifier = Modifier
                                             .fillMaxWidth()
-                                            .height(230.dp)
+                                            .height(250.dp)
                                     )
                                     TeachAndHudPanel(
                                         state = state,
@@ -788,12 +814,13 @@ private fun StatusOrErrorBanner(
 @Composable
 private fun XrealBottomActionBar(
     state: RoboXrUiState,
-    onOneShotRecovery: () -> Unit,
+    onRunLiveDemo: () -> Unit,
     onApproveDeploy: () -> Unit,
     onFaultInject: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     val canDeploy = state.guardrailReport?.passed == true && state.compiledProgram != null
+    val demoRunning = state.demoState.running
     Surface(
         color = MaterialTheme.colorScheme.surface,
         border = BorderStroke(0.5.dp, MaterialTheme.colorScheme.outline),
@@ -807,21 +834,26 @@ private fun XrealBottomActionBar(
             verticalAlignment = Alignment.CenterVertically
         ) {
             OutlinedButton(
-                onClick = onOneShotRecovery,
-                border = BorderStroke(1.dp, ElectricCyan),
+                onClick = onRunLiveDemo,
+                border = BorderStroke(1.2.dp, if (demoRunning) HitlAmber else ElectricCyan),
                 contentPadding = PaddingValues(horizontal = 10.dp, vertical = 0.dp),
                 shape = RoundedCornerShape(10.dp),
                 modifier = Modifier
-                    .weight(1f)
+                    .weight(1.05f)
                     .height(48.dp)
-                    .testTag("one_shot_recovery_button")
+                    .testTag("xreal_live_demo_button")
             ) {
-                Icon(Icons.Filled.Bolt, contentDescription = null, tint = ElectricCyan, modifier = Modifier.size(16.dp))
+                Icon(
+                    imageVector = if (demoRunning) Icons.Filled.Stop else Icons.Filled.PlayArrow,
+                    contentDescription = null,
+                    tint = if (demoRunning) HitlAmber else ElectricCyan,
+                    modifier = Modifier.size(17.dp)
+                )
                 Spacer(modifier = Modifier.width(4.dp))
                 Text(
-                    text = "30s Recovery",
+                    text = if (demoRunning) "Stop Demo" else "XREAL Demo",
                     style = MaterialTheme.typography.labelMedium,
-                    color = ElectricCyan,
+                    color = if (demoRunning) HitlAmber else ElectricCyan,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis
                 )

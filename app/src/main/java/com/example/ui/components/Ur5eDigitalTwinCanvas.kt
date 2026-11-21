@@ -8,6 +8,7 @@ import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.gestures.detectDragGestures
@@ -27,16 +28,20 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.ControlCamera
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Remove
-import androidx.compose.material.icons.filled.ControlCamera
 import androidx.compose.material.icons.filled.TouchApp
+import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -57,10 +62,16 @@ import androidx.compose.ui.graphics.PathEffect
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import com.example.R
+import com.example.robotics.CellStatus
 import com.example.robotics.ElectrochromicLevel
 import com.example.robotics.GuardrailReport
 import com.example.robotics.ManufacturingCell
@@ -69,6 +80,7 @@ import com.example.robotics.StructuredTaskSpec
 import com.example.robotics.Vec3Mm
 import com.example.robotics.VisorInteractionMode
 import com.example.ui.PinchTargetMode
+import com.example.ui.XrealDemoState
 import com.example.ui.theme.ElectricCyan
 import com.example.ui.theme.HitlAmber
 import com.example.ui.theme.InterlockCrimson
@@ -104,6 +116,8 @@ fun Ur5eDigitalTwinCanvas(
     pinchTargetMode: PinchTargetMode,
     visorInteractionMode: VisorInteractionMode,
     electrochromicLevel: ElectrochromicLevel,
+    glassesFrameEnabled: Boolean,
+    demoState: XrealDemoState,
     isPlaying: Boolean,
     manualStageIndex: Int?,
     onTogglePlay: () -> Unit,
@@ -111,6 +125,8 @@ fun Ur5eDigitalTwinCanvas(
     onSetInteractionMode: (VisorInteractionMode) -> Unit,
     onSelectPinchTarget: (PinchTargetMode) -> Unit,
     onCycleElectrochromic: () -> Unit,
+    onToggleGlassesFrame: () -> Unit,
+    onStopDemo: () -> Unit,
     onMoveActiveAnchor: (Vec3Mm) -> Unit,
     onStepActiveAnchorZ: (Double) -> Unit,
     modifier: Modifier = Modifier
@@ -184,14 +200,21 @@ fun Ur5eDigitalTwinCanvas(
         else -> MaterialTheme.colorScheme.outlineVariant
     }
 
-    val bgBrush = when (electrochromicLevel) {
-        ElectrochromicLevel.OPTICAL_CLEAR -> Brush.verticalGradient(listOf(OpticalPureBlack, OpticalPureBlack))
-        ElectrochromicLevel.SHOPFLOOR_TINT -> Brush.radialGradient(
-            listOf(Color(0xFF0A1626), Color(0xFF03060B))
-        )
-        ElectrochromicLevel.FULL_TWIN -> Brush.radialGradient(
-            listOf(Color(0xFF12233E), Color(0xFF070C16))
-        )
+    val passthroughAlpha = when (electrochromicLevel) {
+        ElectrochromicLevel.OPTICAL_CLEAR -> 0.84f
+        ElectrochromicLevel.SHOPFLOOR_TINT -> 0.56f
+        ElectrochromicLevel.FULL_TWIN -> 0.10f
+    }
+    val electrochromicScrimAlpha = when (electrochromicLevel) {
+        ElectrochromicLevel.OPTICAL_CLEAR -> 0.28f
+        ElectrochromicLevel.SHOPFLOOR_TINT -> 0.56f
+        ElectrochromicLevel.FULL_TWIN -> 0.88f
+    }
+
+    val stackLightColor = when {
+        protectiveStop || cell.status == CellStatus.JAM_ALERT -> InterlockCrimson
+        cell.status == CellStatus.CHANGEOVER -> HitlAmber
+        else -> SafetyEmerald
     }
 
     Column(
@@ -202,12 +225,47 @@ fun Ur5eDigitalTwinCanvas(
             modifier = Modifier
                 .fillMaxWidth()
                 .weight(1f)
-                .clip(RoundedCornerShape(16.dp))
-                .background(bgBrush)
-                .border(1.5.dp, borderColor, RoundedCornerShape(16.dp))
+                .clip(RoundedCornerShape(18.dp))
+                .background(OpticalPureBlack)
+                .border(1.8.dp, borderColor, RoundedCornerShape(18.dp))
                 .testTag("ur5e_digital_twin_canvas")
         ) {
-            // Interactive 3D Spatial Canvas
+            // LAYER 0: Real Manufacturing Floor Optical See-Through Passthrough with 3DoF Parallax
+            val parallaxX = (((yawDeg + 40f) * -0.9f) + (if (xrealState.imuTrackingActive) xrealState.headYawDeg * -1.4f else 0f))
+                .coerceIn(-48f, 48f)
+            val parallaxY = (((pitchDeg - 28f) * 0.6f) + (if (xrealState.imuTrackingActive) xrealState.headPitchDeg * 1.1f else 0f))
+                .coerceIn(-34f, 34f)
+
+            Image(
+                painter = painterResource(id = R.drawable.bg_xreal_factory_passthrough),
+                contentDescription = "XREAL Glasses optical see-through manufacturing cell view",
+                contentScale = ContentScale.Crop,
+                alpha = passthroughAlpha,
+                modifier = Modifier
+                    .fillMaxSize()
+                    .graphicsLayer {
+                        scaleX = 1.14f + ((zoomScale - 1f) * 0.14f).coerceIn(-0.04f, 0.22f)
+                        scaleY = 1.14f + ((zoomScale - 1f) * 0.14f).coerceIn(-0.04f, 0.22f)
+                        translationX = parallaxX
+                        translationY = parallaxY
+                    }
+            )
+
+            // LAYER 1: XREAL Electrochromic Dimming Lens Film & Birdbath Optical Vignette
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(
+                        Brush.radialGradient(
+                            colors = listOf(
+                                Color(0xFF040914).copy(alpha = electrochromicScrimAlpha * 0.72f),
+                                Color(0xFF02050B).copy(alpha = (electrochromicScrimAlpha + 0.18f).coerceAtMost(0.95f))
+                            )
+                        )
+                    )
+            )
+
+            // LAYER 2: Interactive 3D Spatial Holographic Canvas
             Canvas(
                 modifier = Modifier
                     .fillMaxSize()
@@ -388,116 +446,204 @@ fun Ur5eDigitalTwinCanvas(
                         style = Stroke(width = 3f)
                     )
                 }
-            }
 
-            // TOP-LEFT: Live XREAL Manufacturing Hub Cell Telemetry HUD
-            Column(
-                modifier = Modifier
-                    .align(Alignment.TopStart)
-                    .padding(10.dp),
-                verticalArrangement = Arrangement.spacedBy(4.dp)
-            ) {
-                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    Surface(
-                        color = Color(0xCC050912),
-                        shape = RoundedCornerShape(8.dp),
-                        border = BorderStroke(
-                            1.dp,
-                            if (protectiveStop) InterlockCrimson else ElectricCyan.copy(alpha = 0.7f)
-                        )
-                    ) {
-                        Text(
-                            text = "${cell.cellId} · ${cell.machineName}",
-                            style = MaterialTheme.typography.labelSmall,
-                            color = if (protectiveStop) InterlockCrimson else ElectricCyan,
-                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
-                        )
-                    }
-                    Surface(
-                        color = Color(0xCC050912),
-                        shape = RoundedCornerShape(8.dp),
-                        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline)
-                    ) {
-                        Text(
-                            text = "${cell.spindleRpm} RPM · ${if (cell.doorOpen) "DOOR OPEN" else "DOOR LOCKED"}",
-                            style = MaterialTheme.typography.labelSmall,
-                            color = if (cell.doorOpen) HitlAmber else SafetyEmerald,
-                            modifier = Modifier.padding(horizontal = 7.dp, vertical = 4.dp)
-                        )
-                    }
-                }
-                Text(
-                    text = "TCP ${currentTcp.formatCompact()} mm | J1=${"%.2f".format(currentJoints.shoulderPanRad)} J2=${"%.2f".format(currentJoints.shoulderLiftRad)} | ${if (holdingBillet) "GRIP: CLOSED" else "GRIP: OPEN"}",
-                    style = MonoTelemetryStyle,
-                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.9f),
-                    modifier = Modifier
-                        .background(Color(0xAA050912), RoundedCornerShape(6.dp))
-                        .padding(horizontal = 6.dp, vertical = 2.dp)
-                )
-            }
-
-            // TOP-RIGHT: Interaction Mode (Pinch Drag vs 3D Orbit) + Electrochromic Lens Dimmer
-            Row(
-                modifier = Modifier
-                    .align(Alignment.TopEnd)
-                    .padding(8.dp),
-                horizontalArrangement = Arrangement.spacedBy(4.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Surface(
-                    onClick = {
-                        val next = if (visorInteractionMode == VisorInteractionMode.PINCH_DRAG) {
-                            VisorInteractionMode.ORBIT_3D
-                        } else {
-                            VisorInteractionMode.PINCH_DRAG
-                        }
-                        onSetInteractionMode(next)
-                    },
-                    color = Color(0xCC060C18),
-                    shape = RoundedCornerShape(8.dp),
-                    border = BorderStroke(
-                        1.dp,
-                        if (visorInteractionMode == VisorInteractionMode.PINCH_DRAG) SafetyEmerald else ElectricCyan
-                    ),
-                    modifier = Modifier.testTag("visor_interaction_mode_toggle")
-                ) {
-                    Row(
-                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 5.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(4.dp)
-                    ) {
-                        Icon(
-                            imageVector = if (visorInteractionMode == VisorInteractionMode.PINCH_DRAG) {
-                                Icons.Filled.TouchApp
-                            } else {
-                                Icons.Filled.ControlCamera
-                            },
-                            contentDescription = "Switch visor interaction mode",
-                            tint = if (visorInteractionMode == VisorInteractionMode.PINCH_DRAG) SafetyEmerald else ElectricCyan,
-                            modifier = Modifier.size(15.dp)
-                        )
-                        Text(
-                            text = visorInteractionMode.label,
-                            style = MaterialTheme.typography.labelSmall,
-                            color = if (visorInteractionMode == VisorInteractionMode.PINCH_DRAG) SafetyEmerald else ElectricCyan
-                        )
-                    }
-                }
-
-                Surface(
-                    onClick = onCycleElectrochromic,
-                    color = Color(0xCC060C18),
-                    shape = RoundedCornerShape(8.dp),
-                    border = BorderStroke(1.dp, ElectricCyan.copy(alpha = 0.6f)),
-                    modifier = Modifier.testTag("electrochromic_cycle_button")
-                ) {
-                    Text(
-                        text = electrochromicLevel.label,
-                        style = MaterialTheme.typography.labelSmall,
-                        color = ElectricCyan,
-                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 5.dp)
+                // 12. Animated Holographic Hand-Pinch Ring during Guided XREAL Demo Step 3
+                if (demoState.showVirtualHandPinch) {
+                    val pinchPt = project(pickAnchorMm)
+                    drawCircle(
+                        color = SafetyEmerald.copy(alpha = 0.25f + pulseAlpha * 0.25f),
+                        radius = 36f,
+                        center = Offset(pinchPt.x, pinchPt.y)
+                    )
+                    drawCircle(
+                        color = Color.White,
+                        radius = 18f,
+                        center = Offset(pinchPt.x, pinchPt.y),
+                        style = Stroke(width = 2.6f)
+                    )
+                    drawCircle(
+                        color = SafetyEmerald,
+                        radius = 6f,
+                        center = Offset(pinchPt.x, pinchPt.y)
                     )
                 }
+
+                // 13. Subtle XREAL Birdbath Dual-Optic Lens Contour Vignette
+                if (glassesFrameEnabled) {
+                    val lensStroke = Color(0xFF38BDF8).copy(alpha = 0.24f)
+                    val bridgeW = size.width * 0.045f
+                    val pad = 10f
+                    drawRoundRect(
+                        color = lensStroke,
+                        topLeft = Offset(pad, pad),
+                        size = androidx.compose.ui.geometry.Size(size.width - pad * 2f, size.height - pad * 2f),
+                        cornerRadius = androidx.compose.ui.geometry.CornerRadius(28f, 28f),
+                        style = Stroke(width = 1.6f)
+                    )
+                    // Subtle center optical nose-bridge notch marker at bottom center
+                    val cx = size.width * 0.5f
+                    val by = size.height - pad
+                    drawLine(lensStroke, Offset(cx - bridgeW, by), Offset(cx, by - 10f), strokeWidth = 1.8f)
+                    drawLine(lensStroke, Offset(cx, by - 10f), Offset(cx + bridgeW, by), strokeWidth = 1.8f)
+                }
+            }
+
+            // TOP OVERLAY: Non-overlapping 2-row XREAL Glasses HUD (Operator + Cell Stack Light + Controls)
+            Column(
+                modifier = Modifier
+                    .align(Alignment.TopCenter)
+                    .fillMaxWidth()
+                    .padding(horizontal = 8.dp, vertical = 8.dp),
+                verticalArrangement = Arrangement.spacedBy(4.dp)
+            ) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Row(
+                        modifier = Modifier.weight(1f),
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .size(30.dp)
+                                .clip(CircleShape)
+                                .border(1.5.dp, stackLightColor, CircleShape)
+                        ) {
+                            Image(
+                                painter = painterResource(id = R.drawable.img_xreal_operator_hub),
+                                contentDescription = "Operator wearing XREAL smart glasses on factory floor",
+                                contentScale = ContentScale.Crop,
+                                modifier = Modifier.fillMaxSize()
+                            )
+                        }
+
+                        Surface(
+                            color = Color(0xD9050912),
+                            shape = RoundedCornerShape(8.dp),
+                            border = BorderStroke(1.dp, stackLightColor.copy(alpha = 0.85f))
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(horizontal = 7.dp, vertical = 4.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(5.dp)
+                            ) {
+                                Box(
+                                    modifier = Modifier
+                                        .size(7.dp)
+                                        .clip(CircleShape)
+                                        .background(
+                                            stackLightColor.copy(
+                                                alpha = if (protectiveStop || cell.status == CellStatus.JAM_ALERT) pulseAlpha else 1f
+                                            )
+                                        )
+                                )
+                                Text(
+                                    text = "${cell.cellId} · ${cell.machineName}",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = if (protectiveStop) InterlockCrimson else ElectricCyan,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                            }
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.width(4.dp))
+
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(4.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Surface(
+                            onClick = {
+                                val next = if (visorInteractionMode == VisorInteractionMode.PINCH_DRAG) {
+                                    VisorInteractionMode.ORBIT_3D
+                                } else {
+                                    VisorInteractionMode.PINCH_DRAG
+                                }
+                                onSetInteractionMode(next)
+                            },
+                            color = Color(0xCC060C18),
+                            shape = RoundedCornerShape(8.dp),
+                            border = BorderStroke(
+                                1.dp,
+                                if (visorInteractionMode == VisorInteractionMode.PINCH_DRAG) SafetyEmerald else ElectricCyan
+                            ),
+                            modifier = Modifier.testTag("visor_interaction_mode_toggle")
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(horizontal = 7.dp, vertical = 4.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(3.dp)
+                            ) {
+                                Icon(
+                                    imageVector = if (visorInteractionMode == VisorInteractionMode.PINCH_DRAG) {
+                                        Icons.Filled.TouchApp
+                                    } else {
+                                        Icons.Filled.ControlCamera
+                                    },
+                                    contentDescription = "Switch visor interaction mode",
+                                    tint = if (visorInteractionMode == VisorInteractionMode.PINCH_DRAG) SafetyEmerald else ElectricCyan,
+                                    modifier = Modifier.size(14.dp)
+                                )
+                                Text(
+                                    text = visorInteractionMode.label,
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = if (visorInteractionMode == VisorInteractionMode.PINCH_DRAG) SafetyEmerald else ElectricCyan
+                                )
+                            }
+                        }
+
+                        Surface(
+                            onClick = onCycleElectrochromic,
+                            color = Color(0xCC060C18),
+                            shape = RoundedCornerShape(8.dp),
+                            border = BorderStroke(1.dp, ElectricCyan.copy(alpha = 0.6f)),
+                            modifier = Modifier.testTag("electrochromic_cycle_button")
+                        ) {
+                            Text(
+                                text = electrochromicLevel.label,
+                                style = MaterialTheme.typography.labelSmall,
+                                color = ElectricCyan,
+                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 4.dp)
+                            )
+                        }
+
+                        Surface(
+                            onClick = onToggleGlassesFrame,
+                            color = Color(0xCC060C18),
+                            shape = RoundedCornerShape(8.dp),
+                            border = BorderStroke(
+                                1.dp,
+                                if (glassesFrameEnabled) SafetyEmerald else MaterialTheme.colorScheme.outline
+                            ),
+                            modifier = Modifier.testTag("xreal_visor_frame_toggle")
+                        ) {
+                            Icon(
+                                imageVector = Icons.Filled.Visibility,
+                                contentDescription = "Toggle XREAL optical lens contour",
+                                tint = if (glassesFrameEnabled) SafetyEmerald else MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier
+                                    .padding(4.dp)
+                                    .size(15.dp)
+                            )
+                        }
+                    }
+                }
+
+                Text(
+                    text = "${if (glassesFrameEnabled) "XREAL 52° FOV" else "${cell.spindleRpm} RPM"} | TCP ${currentTcp.formatCompact()} mm | ${if (holdingBillet) "BILLET HELD" else "GRIP OPEN"}",
+                    style = MonoTelemetryStyle,
+                    color = Color(0xFFEAF4FF),
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier
+                        .background(Color(0xC2050912), RoundedCornerShape(6.dp))
+                        .padding(horizontal = 6.dp, vertical = 2.dp)
+                )
             }
 
             // RIGHT EDGE: Interactive On-Visor Z-Elevation Step Rail
@@ -555,49 +701,126 @@ fun Ur5eDigitalTwinCanvas(
                 }
             }
 
-            // BOTTOM BAR INSIDE VISOR: Quick Pick/Place Switch + Camera Presets + Play/Pause
-            Row(
+            // BOTTOM OVERLAY INSIDE VISOR: Live Guided XREAL Demo HUD Caption + Controls
+            Column(
                 modifier = Modifier
                     .align(Alignment.BottomCenter)
                     .fillMaxWidth()
                     .padding(horizontal = 8.dp, vertical = 6.dp),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
+                verticalArrangement = Arrangement.spacedBy(5.dp)
             ) {
-                Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                    VisorMiniChip(
-                        label = "PICK",
-                        accent = SafetyEmerald,
-                        selected = pinchTargetMode == PinchTargetMode.PICK,
-                        onClick = { onSelectPinchTarget(PinchTargetMode.PICK) }
-                    )
-                    VisorMiniChip(
-                        label = "PLACE",
-                        accent = ElectricCyan,
-                        selected = pinchTargetMode == PinchTargetMode.PLACE,
-                        onClick = { onSelectPinchTarget(PinchTargetMode.PLACE) }
-                    )
+                if (demoState.running) {
+                    Surface(
+                        color = Color(0xE6040A16),
+                        shape = RoundedCornerShape(10.dp),
+                        border = BorderStroke(
+                            1.2.dp,
+                            if (protectiveStop) InterlockCrimson else ElectricCyan
+                        ),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .testTag("xreal_demo_caption_hud")
+                    ) {
+                        Column(
+                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 7.dp),
+                            verticalArrangement = Arrangement.spacedBy(4.dp)
+                        ) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text(
+                                    text = demoState.stepTitle,
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = if (protectiveStop) InterlockCrimson else SafetyEmerald,
+                                    fontWeight = FontWeight.Bold
+                                )
+                                Surface(
+                                    onClick = onStopDemo,
+                                    color = Color(0x33FFFFFF),
+                                    shape = RoundedCornerShape(6.dp),
+                                    modifier = Modifier.testTag("stop_demo_hud_button")
+                                ) {
+                                    Row(
+                                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.spacedBy(2.dp)
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Filled.Close,
+                                            contentDescription = "Stop guided demo",
+                                            tint = Color.White,
+                                            modifier = Modifier.size(12.dp)
+                                        )
+                                        Text(
+                                            text = "Stop",
+                                            style = MaterialTheme.typography.labelSmall,
+                                            color = Color.White
+                                        )
+                                    }
+                                }
+                            }
+                            Text(
+                                text = demoState.caption,
+                                style = MaterialTheme.typography.bodySmall,
+                                color = Color.White,
+                                maxLines = 2,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                            LinearProgressIndicator(
+                                progress = { demoState.progress.coerceIn(0f, 1f) },
+                                color = if (protectiveStop) InterlockCrimson else SafetyEmerald,
+                                trackColor = Color(0xFF1A2A3F),
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .height(3.dp)
+                                    .clip(RoundedCornerShape(2.dp))
+                            )
+                        }
+                    }
                 }
 
                 Row(
-                    horizontalArrangement = Arrangement.spacedBy(2.dp),
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    CameraPresetChip("ISO") { yawDeg = -40f; pitchDeg = 28f; zoomScale = 1.05f }
-                    CameraPresetChip("TOP") { yawDeg = 0f; pitchDeg = 80f; zoomScale = 1.1f }
-                    CameraPresetChip("CHUCK") { yawDeg = -18f; pitchDeg = 18f; zoomScale = 1.35f }
-                    IconButton(
-                        onClick = onTogglePlay,
-                        modifier = Modifier
-                            .size(36.dp)
-                            .testTag("twin_play_pause_button")
-                    ) {
-                        Icon(
-                            imageVector = if (isPlaying) Icons.Filled.Pause else Icons.Filled.PlayArrow,
-                            contentDescription = if (isPlaying) "Pause UR5e animation" else "Play UR5e animation",
-                            tint = ElectricCyan,
-                            modifier = Modifier.size(20.dp)
+                    Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                        VisorMiniChip(
+                            label = "PICK",
+                            accent = SafetyEmerald,
+                            selected = pinchTargetMode == PinchTargetMode.PICK,
+                            onClick = { onSelectPinchTarget(PinchTargetMode.PICK) }
                         )
+                        VisorMiniChip(
+                            label = "PLACE",
+                            accent = ElectricCyan,
+                            selected = pinchTargetMode == PinchTargetMode.PLACE,
+                            onClick = { onSelectPinchTarget(PinchTargetMode.PLACE) }
+                        )
+                    }
+
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(2.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        CameraPresetChip("ISO") { yawDeg = -40f; pitchDeg = 28f; zoomScale = 1.05f }
+                        CameraPresetChip("TOP") { yawDeg = 0f; pitchDeg = 80f; zoomScale = 1.1f }
+                        CameraPresetChip("CHUCK") { yawDeg = -18f; pitchDeg = 18f; zoomScale = 1.35f }
+                        IconButton(
+                            onClick = onTogglePlay,
+                            modifier = Modifier
+                                .size(36.dp)
+                                .testTag("twin_play_pause_button")
+                        ) {
+                            Icon(
+                                imageVector = if (isPlaying) Icons.Filled.Pause else Icons.Filled.PlayArrow,
+                                contentDescription = if (isPlaying) "Pause UR5e animation" else "Play UR5e animation",
+                                tint = ElectricCyan,
+                                modifier = Modifier.size(20.dp)
+                            )
+                        }
                     }
                 }
             }

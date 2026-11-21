@@ -64,12 +64,24 @@ enum class PipelineStage(val stepNumber: Int) {
     DEPLOY(4)
 }
 
+data class XrealDemoState(
+    val running: Boolean = false,
+    val stepNumber: Int = 0,
+    val totalSteps: Int = 5,
+    val stepTitle: String = "",
+    val caption: String = "",
+    val progress: Float = 0f,
+    val showVirtualHandPinch: Boolean = false,
+    val completed: Boolean = false
+)
+
 data class RoboXrUiState(
     val activeStage: PipelineStage = PipelineStage.TEACH,
     val hubCells: List<ManufacturingCell> = ManufacturingHubCatalog.defaultCells,
     val selectedCellId: String = ManufacturingHubCatalog.defaultCells.first().cellId,
     val electrochromicLevel: ElectrochromicLevel = ElectrochromicLevel.SHOPFLOOR_TINT,
     val visorInteractionMode: VisorInteractionMode = VisorInteractionMode.PINCH_DRAG,
+    val xrealGlassesFrameEnabled: Boolean = true,
     val opticalSeeThroughMode: Boolean = false,
     val pinchTargetMode: PinchTargetMode = PinchTargetMode.PICK,
     val offlineEnginePreferred: Boolean = false,
@@ -92,6 +104,7 @@ data class RoboXrUiState(
     val twinPlaying: Boolean = true,
     val manualStageIndex: Int? = null,
     val cloudSyncActive: Boolean = false,
+    val demoState: XrealDemoState = XrealDemoState(),
     val statusBanner: String? = null,
     val errorBanner: String? = null
 ) {
@@ -131,6 +144,7 @@ class RoboXrViewModel(
     private var auditObserverJob: Job? = null
     private var presetsObserverJob: Job? = null
     private var stopwatchJob: Job? = null
+    private var demoJob: Job? = null
     private var stopwatchStartMs: Long = 0L
 
     private val localAuditCache = mutableListOf<AuditLogRecord>()
@@ -236,6 +250,182 @@ class RoboXrViewModel(
 
     fun setVisorInteractionMode(mode: VisorInteractionMode) {
         _uiState.update { it.copy(visorInteractionMode = mode) }
+    }
+
+    fun toggleXrealGlassesFrame() {
+        _uiState.update {
+            val next = !it.xrealGlassesFrameEnabled
+            it.copy(
+                xrealGlassesFrameEnabled = next,
+                statusBanner = if (next) "XREAL Birdbath Optical Visor Emulator ON" else "Full-Canvas Twin View ON"
+            )
+        }
+    }
+
+    /**
+     * Runs a live, real-time 5-step XREAL Smart Glasses Manufacturing Hub Demo inside the emulator:
+     *  1. XREAL optical lock-on to CELL-01 Haas VF-2 Mill (JAM ALERT)
+     *  2. Live ISO 10218 red fixture collision interlock demo
+     *  3. Animated holographic hand-pinch dragging Pick anchor out of keep-out zone + voice command
+     *  4. Real-time 6-stage spline synthesis, <1ms guardrail PASS & billet lift replay
+     *  5. Stage 4 HITL dispatch, SHA-256 audit hash seal & green stack-light recovery (<20s)
+     */
+    fun startXrealGuidedDemo() {
+        demoJob?.cancel()
+        resetAndStartStopwatch()
+
+        // Reset CELL-01 to JAM_ALERT so the recovery transition is clearly visible
+        _uiState.update { state ->
+            val resetCells = state.hubCells.map { cell ->
+                if (cell.cellId == "CELL-01") {
+                    cell.copy(status = CellStatus.JAM_ALERT, doorOpen = true)
+                } else {
+                    cell
+                }
+            }
+            state.copy(
+                hubCells = resetCells,
+                selectedCellId = "CELL-01",
+                xrealGlassesFrameEnabled = true,
+                electrochromicLevel = ElectrochromicLevel.OPTICAL_CLEAR,
+                opticalSeeThroughMode = false,
+                visorInteractionMode = VisorInteractionMode.PINCH_DRAG,
+                pinchTargetMode = PinchTargetMode.PICK,
+                twinPlaying = true,
+                manualStageIndex = null,
+                errorBanner = null,
+                demoState = XrealDemoState(
+                    running = true,
+                    stepNumber = 1,
+                    stepTitle = "1/5 · XREAL OPTICAL LOCK-ON",
+                    caption = "Looking through XREAL glasses at CELL-01 Haas VF-2 Mill — Part jam detected at CNC chuck.",
+                    progress = 0.12f,
+                    showVirtualHandPinch = false
+                )
+            )
+        }
+
+        demoJob = viewModelScope.launch {
+            try {
+                // Step 1: Optical see-through lock-on
+                val jamPick = Vec3Mm(355.0, 105.0, 95.0) // Inside red fixture keep-out box!
+                val safePlace = Vec3Mm(520.0, -170.0, 120.0)
+                _uiState.update {
+                    it.copy(
+                        pickAnchorMm = Vec3Mm(420.0, 210.0, 140.0),
+                        placeAnchorMm = safePlace,
+                        requestedSpeedMmS = 180.0,
+                        voiceIntent = "Scanning CELL-01 CNC chuck via XREAL spatial anchors..."
+                    )
+                }
+                revalidateCurrentAnchorsFast()
+                delay(2400L)
+
+                // Step 2: Demonstrate ISO 10218 Keep-Out Box Protective Stop Interlock
+                _uiState.update {
+                    it.copy(
+                        pickAnchorMm = jamPick,
+                        activeStage = PipelineStage.VALIDATE,
+                        demoState = XrealDemoState(
+                            running = true,
+                            stepNumber = 2,
+                            stepTitle = "2/5 · ISO 10218 PROTECTIVE STOP",
+                            caption = "Jammed billet enters red fixture keep-out box — <1ms safety interlock blocks unsafe motion!",
+                            progress = 0.34f,
+                            showVirtualHandPinch = false
+                        )
+                    )
+                }
+                revalidateCurrentAnchorsFast()
+                delay(2800L)
+
+                // Step 3: Live animated holographic hand-pinch dragging Pick anchor cleanly out of collision zone
+                val targetSafePick = Vec3Mm(395.0, 195.0, 130.0)
+                val fullVoice = "Pick jammed billet from chuck, clear fixture clamp by 60mm, place on inspection conveyor"
+                val totalFrames = 26
+                for (frame in 1..totalFrames) {
+                    val t = frame.toFloat() / totalFrames.toFloat()
+                    // Smoothstep easing
+                    val smooth = t * t * (3f - 2f * t)
+                    val curX = jamPick.x + (targetSafePick.x - jamPick.x) * smooth
+                    val curY = jamPick.y + (targetSafePick.y - jamPick.y) * smooth
+                    val curZ = jamPick.z + (targetSafePick.z - jamPick.z) * smooth
+                    val chars = (fullVoice.length * t).toInt().coerceAtLeast(8)
+                    _uiState.update {
+                        it.copy(
+                            pickAnchorMm = Vec3Mm(curX, curY, curZ),
+                            voiceIntent = fullVoice.take(chars),
+                            activeStage = PipelineStage.TEACH,
+                            demoState = XrealDemoState(
+                                running = true,
+                                stepNumber = 3,
+                                stepTitle = "3/5 · SPATIAL PINCH & VOICE TEACH",
+                                caption = "Pinch-dragging hologram out of red keep-out zone · Voice: \"${fullVoice.take(chars)}\"",
+                                progress = 0.36f + (0.28f * t),
+                                showVirtualHandPinch = true
+                            )
+                        )
+                    }
+                    revalidateCurrentAnchorsFast()
+                    delay(110L)
+                }
+
+                // Step 4: Electrochromic 50% Tint + 6-Stage AI Trajectory Validation & Live Billet Replay
+                _uiState.update {
+                    it.copy(
+                        electrochromicLevel = ElectrochromicLevel.SHOPFLOOR_TINT,
+                        activeStage = PipelineStage.VALIDATE,
+                        twinPlaying = true,
+                        manualStageIndex = null,
+                        demoState = XrealDemoState(
+                            running = true,
+                            stepNumber = 4,
+                            stepTitle = "4/5 · AI TRAJECTORY & ISO PASS",
+                            caption = "6-stage spline synthesized & all 5 ISO 10218 checks PASSED — previewing UR5e billet transfer.",
+                            progress = 0.78f,
+                            showVirtualHandPinch = false
+                        )
+                    )
+                }
+                revalidateCurrentAnchorsFast()
+                delay(3400L)
+
+                // Step 5: HITL Approve & Dispatch -> SHA-256 Audit Seal + Stack Light flips GREEN RECOVERED
+                _uiState.update {
+                    it.copy(
+                        physicalClearanceConfirmed = true,
+                        operatorBadgeId = "OP-4021",
+                        demoState = XrealDemoState(
+                            running = true,
+                            stepNumber = 5,
+                            stepTitle = "5/5 · UR5e DEPLOYED · CELL RECOVERED",
+                            caption = "Operator OP-4021 approved URScript + ROS 2 dispatch · SHA-256 audit sealed · Drag holograms to explore!",
+                            progress = 1.0f,
+                            showVirtualHandPinch = false,
+                            completed = true
+                        )
+                    )
+                }
+                approveAndDeployHitl()
+                delay(4200L)
+                _uiState.update {
+                    it.copy(demoState = it.demoState.copy(running = false, completed = true))
+                }
+            } catch (e: CancellationException) {
+                throw e
+            }
+        }
+    }
+
+    fun stopXrealGuidedDemo() {
+        demoJob?.cancel()
+        demoJob = null
+        _uiState.update {
+            it.copy(
+                demoState = XrealDemoState(running = false),
+                statusBanner = "XREAL Demo paused — interactive Pinch Drag & 3D Orbit active"
+            )
+        }
     }
 
     fun setPinchTargetMode(mode: PinchTargetMode) {
