@@ -1,0 +1,190 @@
+{
+  "entities": {
+    "AuditLogRecord": {
+      "title": "AuditLogRecord",
+      "description": "Immutable SHA-256 cryptographic audit chain entry logged after Stage 4 Qualified Operator sign-off.",
+      "type": "object",
+      "properties": {
+        "userId": {
+          "type": "string",
+          "description": "Authenticated operator Firebase Auth UID"
+        },
+        "operatorEmail": {
+          "type": "string",
+          "description": "Authenticated operator email address"
+        },
+        "operatorBadgeId": {
+          "type": "string",
+          "description": "Shopfloor Qualified Operator badge ID"
+        },
+        "taskName": {
+          "type": "string",
+          "description": "Name of the taught or recovered CNC robot task"
+        },
+        "voiceIntent": {
+          "type": "string",
+          "description": "Natural language operator voice or text command"
+        },
+        "plannerSource": {
+          "type": "string",
+          "enum": ["GEMINI_AI_LOGIC", "OFFLINE_KOTLIN_ENGINE"],
+          "description": "Which Stage 2 planner generated the task specification"
+        },
+        "pickCoordsMm": {
+          "type": "string",
+          "description": "Formatted 3D pick anchor vector in millimeters"
+        },
+        "placeCoordsMm": {
+          "type": "string",
+          "description": "Formatted 3D place anchor vector in millimeters"
+        },
+        "targetSpeedMmS": {
+          "type": "number",
+          "description": "Validated collaborative speed in mm/s (<= 250)"
+        },
+        "guardrailLatencyUs": {
+          "type": "integer",
+          "description": "Deterministic Stage 3 validation latency in microseconds"
+        },
+        "recoveryDurationMs": {
+          "type": "integer",
+          "description": "Total Stage 1 to Stage 4 anomaly recovery elapsed time in ms"
+        },
+        "guardrailsPassed": {
+          "type": "boolean",
+          "description": "Must be true for any deployed audit entry"
+        },
+        "urScriptHash": {
+          "type": "string",
+          "description": "SHA-256 digest of compiled URScript program"
+        },
+        "ros2GoalHash": {
+          "type": "string",
+          "description": "SHA-256 digest of compiled ROS 2 FollowJointTrajectory goal"
+        },
+        "previousHash": {
+          "type": "string",
+          "description": "Previous SHA-256 chain link hash or 64-zero genesis"
+        },
+        "recordHash": {
+          "type": "string",
+          "description": "SHA-256 cryptographic hash of this audit entry"
+        },
+        "urScriptPreview": {
+          "type": "string",
+          "description": "Compiled URScript snippet dispatched to UR5e"
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp (submitted via FieldValue.serverTimestamp())"
+        }
+      },
+      "required": [
+        "userId",
+        "operatorEmail",
+        "operatorBadgeId",
+        "taskName",
+        "voiceIntent",
+        "plannerSource",
+        "pickCoordsMm",
+        "placeCoordsMm",
+        "targetSpeedMmS",
+        "guardrailLatencyUs",
+        "recoveryDurationMs",
+        "guardrailsPassed",
+        "urScriptHash",
+        "ros2GoalHash",
+        "previousHash",
+        "recordHash",
+        "urScriptPreview",
+        "createdAt"
+      ]
+    },
+    "SavedTaskSpec": {
+      "title": "SavedTaskSpec",
+      "description": "Saved brownfield CNC pick-and-place anchor preset owned by an operator.",
+      "type": "object",
+      "properties": {
+        "userId": {
+          "type": "string",
+          "description": "Authenticated operator Firebase Auth UID"
+        },
+        "taskName": {
+          "type": "string",
+          "description": "Preset display title"
+        },
+        "voiceIntent": {
+          "type": "string",
+          "description": "Natural language intent for this preset"
+        },
+        "pickX": {
+          "type": "number",
+          "description": "Pick anchor X in mm"
+        },
+        "pickY": {
+          "type": "number",
+          "description": "Pick anchor Y in mm"
+        },
+        "pickZ": {
+          "type": "number",
+          "description": "Pick anchor Z in mm"
+        },
+        "placeX": {
+          "type": "number",
+          "description": "Place anchor X in mm"
+        },
+        "placeY": {
+          "type": "number",
+          "description": "Place anchor Y in mm"
+        },
+        "placeZ": {
+          "type": "number",
+          "description": "Place anchor Z in mm"
+        },
+        "targetSpeedMmS": {
+          "type": "number",
+          "description": "Target speed in mm/s"
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server creation timestamp (FieldValue.serverTimestamp())"
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server update timestamp (FieldValue.serverTimestamp())"
+        }
+      },
+      "required": [
+        "userId",
+        "taskName",
+        "voiceIntent",
+        "pickX",
+        "pickY",
+        "pickZ",
+        "placeX",
+        "placeY",
+        "placeZ",
+        "targetSpeedMmS",
+        "createdAt",
+        "updatedAt"
+      ]
+    }
+  },
+  "firestore": {
+    "/users/{userId}/auditLogs/{logId}": {
+      "schema": {
+        "$ref": "#/entities/AuditLogRecord"
+      },
+      "description": "Operator-scoped immutable SHA-256 deployment audit chain entries."
+    },
+    "/users/{userId}/taskSpecs/{taskId}": {
+      "schema": {
+        "$ref": "#/entities/SavedTaskSpec"
+      },
+      "description": "Operator-scoped saved CNC machine-tending anchor presets."
+    }
+  }
+}

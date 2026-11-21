@@ -1,0 +1,6 @@
+{
+  "name": "RoboXR AI",
+  "description": "XR-first robot teaching, deterministic ISO 10218 safety guardrails, and 30-second CNC anomaly recovery platform for XREAL & Android XR.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

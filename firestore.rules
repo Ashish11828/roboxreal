@@ -1,0 +1,139 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Global default-deny safety net
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // --- Hardened Global Primitives ---
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return isSignedIn() && request.auth.uid == userId;
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() >= 1 && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    function isHexSha256(val) {
+      return val is string && val.size() == 64 && val.matches('^[0-9a-f]{64}$');
+    }
+
+    // --- Entity Validation Helpers ---
+    function isValidAuditLog(data, userId) {
+      return data.userId == userId &&
+             data.userId == request.auth.uid &&
+             data.operatorEmail is string && data.operatorEmail.size() >= 3 && data.operatorEmail.size() <= 120 &&
+             data.operatorBadgeId is string && data.operatorBadgeId.size() >= 2 && data.operatorBadgeId.size() <= 40 &&
+             data.taskName is string && data.taskName.size() >= 2 && data.taskName.size() <= 120 &&
+             data.voiceIntent is string && data.voiceIntent.size() >= 2 && data.voiceIntent.size() <= 500 &&
+             data.plannerSource in ['GEMINI_AI_LOGIC', 'OFFLINE_KOTLIN_ENGINE'] &&
+             data.pickCoordsMm is string && data.pickCoordsMm.size() >= 5 && data.pickCoordsMm.size() <= 80 &&
+             data.placeCoordsMm is string && data.placeCoordsMm.size() >= 5 && data.placeCoordsMm.size() <= 80 &&
+             data.targetSpeedMmS is number && data.targetSpeedMmS > 0 && data.targetSpeedMmS <= 250 &&
+             data.guardrailLatencyUs is int && data.guardrailLatencyUs >= 0 && data.guardrailLatencyUs <= 10000000 &&
+             data.recoveryDurationMs is int && data.recoveryDurationMs >= 0 && data.recoveryDurationMs <= 3600000 &&
+             data.guardrailsPassed == true &&
+             isHexSha256(data.urScriptHash) &&
+             isHexSha256(data.ros2GoalHash) &&
+             isHexSha256(data.previousHash) &&
+             isHexSha256(data.recordHash) &&
+             data.urScriptPreview is string && data.urScriptPreview.size() >= 10 && data.urScriptPreview.size() <= 4000 &&
+             data.createdAt is timestamp && data.createdAt <= request.time;
+    }
+
+    function isValidTaskSpec(data, userId) {
+      return data.userId == userId &&
+             data.userId == request.auth.uid &&
+             data.taskName is string && data.taskName.size() >= 2 && data.taskName.size() <= 120 &&
+             data.voiceIntent is string && data.voiceIntent.size() >= 2 && data.voiceIntent.size() <= 500 &&
+             data.pickX is number && data.pickX >= -900 && data.pickX <= 900 &&
+             data.pickY is number && data.pickY >= -900 && data.pickY <= 900 &&
+             data.pickZ is number && data.pickZ >= 0 && data.pickZ <= 900 &&
+             data.placeX is number && data.placeX >= -900 && data.placeX <= 900 &&
+             data.placeY is number && data.placeY >= -900 && data.placeY <= 900 &&
+             data.placeZ is number && data.placeZ >= 0 && data.placeZ <= 900 &&
+             data.targetSpeedMmS is number && data.targetSpeedMmS > 0 && data.targetSpeedMmS <= 250 &&
+             data.createdAt is timestamp && data.createdAt <= request.time &&
+             data.updatedAt is timestamp && data.updatedAt <= request.time;
+    }
+
+    // --- Collection Rules ---
+    match /users/{userId}/auditLogs/{logId} {
+      // Operator-scoped read/list via path wildcard (no resource.data in list)
+      allow get: if isOwner(userId) && isValidId(logId);
+      allow list: if isOwner(userId);
+
+      // Append-only cryptographic audit chain: valid create only, no update or delete
+      allow create: if isOwner(userId) &&
+                       isValidId(logId) &&
+                       incoming().keys().hasAll([
+                         'userId', 'operatorEmail', 'operatorBadgeId', 'taskName',
+                         'voiceIntent', 'plannerSource', 'pickCoordsMm', 'placeCoordsMm',
+                         'targetSpeedMmS', 'guardrailLatencyUs', 'recoveryDurationMs',
+                         'guardrailsPassed', 'urScriptHash', 'ros2GoalHash',
+                         'previousHash', 'recordHash', 'urScriptPreview', 'createdAt'
+                       ]) &&
+                       incoming().keys().hasOnly([
+                         'userId', 'operatorEmail', 'operatorBadgeId', 'taskName',
+                         'voiceIntent', 'plannerSource', 'pickCoordsMm', 'placeCoordsMm',
+                         'targetSpeedMmS', 'guardrailLatencyUs', 'recoveryDurationMs',
+                         'guardrailsPassed', 'urScriptHash', 'ros2GoalHash',
+                         'previousHash', 'recordHash', 'urScriptPreview', 'createdAt'
+                       ]) &&
+                       isValidAuditLog(incoming(), userId);
+
+      // Cryptographic audit records are strictly immutable
+      allow update: if false;
+      allow delete: if false;
+    }
+
+    match /users/{userId}/taskSpecs/{taskId} {
+      allow get: if isOwner(userId) && isValidId(taskId);
+      allow list: if isOwner(userId);
+
+      allow create: if isOwner(userId) &&
+                       isValidId(taskId) &&
+                       incoming().keys().hasAll([
+                         'userId', 'taskName', 'voiceIntent',
+                         'pickX', 'pickY', 'pickZ',
+                         'placeX', 'placeY', 'placeZ',
+                         'targetSpeedMmS', 'createdAt', 'updatedAt'
+                       ]) &&
+                       incoming().keys().hasOnly([
+                         'userId', 'taskName', 'voiceIntent',
+                         'pickX', 'pickY', 'pickZ',
+                         'placeX', 'placeY', 'placeZ',
+                         'targetSpeedMmS', 'createdAt', 'updatedAt'
+                       ]) &&
+                       isValidTaskSpec(incoming(), userId);
+
+      allow update: if isOwner(userId) &&
+                       isValidId(taskId) &&
+                       isValidTaskSpec(incoming(), userId) &&
+                       incoming().userId == existing().userId &&
+                       incoming().createdAt == existing().createdAt &&
+                       incoming().diff(existing()).affectedKeys().hasOnly([
+                         'taskName', 'voiceIntent',
+                         'pickX', 'pickY', 'pickZ',
+                         'placeX', 'placeY', 'placeZ',
+                         'targetSpeedMmS', 'updatedAt'
+                       ]);
+
+      allow delete: if isOwner(userId) && isValidId(taskId);
+    }
+  }
+}

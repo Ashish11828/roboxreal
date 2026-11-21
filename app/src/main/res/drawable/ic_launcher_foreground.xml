@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <!-- Bold XREAL optical visor frame inside 66dp safe zone (21..87) -->
+    <path
+        android:fillColor="#FF00E5FF"
+        android:pathData="M26,42 C26,37 30,34 35,34 L73,34 C78,34 82,37 82,42 L82,58 C82,63 78,66 73,66 L62,66 L56,57 C55,55.5 53,55.5 52,57 L46,66 L35,66 C30,66 26,63 26,58 Z M32,42 L32,57 C32,59 34,60 36,60 L43,60 L49,51 C51,48 57,48 59,51 L65,60 L72,60 C74,60 76,59 76,57 L76,42 C76,40 74,39 72,39 L36,39 C34,39 32,40 32,42 Z" />
+    <!-- Cobot articulated arm & base inside optical HUD -->
+    <path
+        android:fillColor="#FFF8FAFC"
+        android:pathData="M37,75 L71,75 L71,79 L37,79 Z M46,73 L50,55 L56,57 L52,73 Z M52,55 L64,45 L68,49 L56,59 Z" />
+    <!-- Glowing emerald spatial pinch anchor target -->
+    <path
+        android:fillColor="#FF10B981"
+        android:pathData="M67,43 A4,4 0 1,0 67,51 A4,4 0 1,0 67,43 Z" />
+    <!-- Precision shoulder joint dot -->
+    <path
+        android:fillColor="#FF00E5FF"
+        android:pathData="M53,53 A3.5,3.5 0 1,0 53,60 A3.5,3.5 0 1,0 53,53 Z" />
+</vector>

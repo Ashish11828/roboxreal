@@ -1,0 +1,27 @@
+<resources>
+    <string name="app_name">RoboXR AI</string>
+    <string name="app_tagline">XR-First Robot Teaching &amp; 30s CNC Anomaly Recovery</string>
+    <string name="auth_title">Qualified Operator Sign-In</string>
+    <string name="auth_subtitle">Authenticate via Google Sign-In to unlock ISO 10218 Stage 4 HITL deployment and the SHA-256 Firestore audit chain.</string>
+    <string name="auth_sign_in_google">Sign in with Google</string>
+    <string name="auth_sign_out">Sign Out</string>
+    <string name="stage_1_label">1. TEACH</string>
+    <string name="stage_2_label">2. INTERPRET</string>
+    <string name="stage_3_label">3. VALIDATE</string>
+    <string name="stage_4_label">4. DEPLOY</string>
+    <string name="action_one_shot_recovery">1-Shot 30s Recovery</string>
+    <string name="action_approve_deploy">Approve &amp; Deploy</string>
+    <string name="action_fault_injection">Fault Injection</string>
+    <string name="action_pinch_pick">Pinch Pick</string>
+    <string name="action_pinch_place">Pinch Place</string>
+    <string name="action_plan_gemini">Plan with Gemini AI</string>
+    <string name="action_plan_offline">Run Offline Engine</string>
+    <string name="protective_stop_banner">PROTECTIVE STOP INTERLOCK ACTIVE — Codegen &amp; motor dispatch blocked</string>
+    <string name="iso_pass_banner">ISO 10218 GUARDRAILS VERIFIED — Ready for Stage 4 Operator Sign-Off</string>
+    <string name="hitl_gate_title">Stage 4 · Qualified Operator Gate</string>
+    <string name="hitl_gate_disclaimer">Zero direct LLM-to-motor control. Confirm physical CNC workcell clearance and operator badge before compiling URScript &amp; ROS 2 goals.</string>
+    <string name="tab_teach">Teach &amp; HUD</string>
+    <string name="tab_twin">3D Twin</string>
+    <string name="tab_code">URScript / ROS 2</string>
+    <string name="tab_audit">SHA-256 Audit</string>
+</resources>
